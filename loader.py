@@ -81,7 +81,7 @@ def _insert_driver():
         for location in locations:
             offset += 1
             sql_statements.append(_insert_into_locations(location) + '\n')
-            #sql_statements.append(_insert_into_contact(location))
+            sql_statements.append(_insert_into_contact(location) + '\n')
             #sql_statements.append(_insert_into_specialqualities(location))
         break
     return sql_statements
@@ -91,7 +91,6 @@ Parses location object to create sql insert statement into Locations table
 param: location (a single location object)
 return: sql insert statement (string)
 '''
-#FIXME
 def _insert_into_locations(location):
     values = []
 
@@ -131,10 +130,17 @@ Parses location object to create a sql insert statement into Contact table
 param: location (a single location object)
 return: sql insert statement (string)
 '''
-#FIXME
 def _insert_into_contact(location):
-    print('in _insert_into_contact')
-    return None
+    values = []
+    # LocationID
+    values.append(_find_value(location, 'ReferenceID'))
+    # Phone
+    values.append(_find_value(location, 'Phone'))
+    # Fax
+    values.append(_find_value(location, 'Fax'))
+    # Terminal
+    values.append(_find_value(location, 'WebAddress'))
+    return _insert_sql_statement(values, 'Contact')
 
 '''
 Parses location object to create a sql insert statement into SpecialQualities table
