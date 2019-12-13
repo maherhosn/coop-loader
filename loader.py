@@ -4,9 +4,9 @@ import bs4
 import lxml
 
 KEY = ""
-CREATE_LOCATIONS_TBL = "CREATE TABLE Locations(LocationID CHAR(64) NOT NULL PRIMARY KEY, InstitutionName VARCHAR(50), TypeName VARCHAR(15) NOT NULL, Street VARCHAR(25) NOT NULL, City VARCHAR(25) NOT NULL, State CHAR(2) NOT NULL, Zipcode VARCHAR(13) NOT NULL, Lat DECIMAL(9,6) NOT NULL, Long DECIMAL(9,6) NOT NULL, RetailOutlet VARCHAR(25), Hours VARCHAR(200));\n"
-CREATE_CONTACT_TBL = "CREATE TABLE Contact(LocationID CHAR(64) NOT NULL PRIMARY KEY, Phone VARCHAR(13), Fax VARCHAR(13), Terminal VARCHAR(60), FOREIGN KEY LocationID REFERENCES [Locations] (LocationID) ON UPDATE NO ACTION ON DELETE CASCADE);\n"
-CREATE_SPECIAL_QUALITIES = "CREATE TABLE Special_Qualities(LocationID CHAR(64) NOT NULL PRIMARY KEY, RestrictedAccess BIT, DepositTaking BIT, LimitedTransactions BIT, HandicapAccess BIT, AcceptsCash BIT, Cashless BIT, SelfServiceOnly BIT, Surcharge BIT, OnMilitaryBase BIT, MilitaryIDRequired BIT AdditionalDetail VARCHAR(50), FOREIGN KEY LocationID REFERENCES [Locations] (LocationID) ON UPDATE NO ACTION ON DELETE CASCADE);\n"
+CREATE_LOCATIONS_TBL = "CREATE TABLE Locations(LocationID VARCHAR(64) NOT NULL PRIMARY KEY, InstitutionName VARCHAR(50), TypeName VARCHAR(15) NOT NULL, Street VARCHAR(25) NOT NULL, City VARCHAR(25) NOT NULL, State CHAR(2) NOT NULL, Zipcode VARCHAR(13) NOT NULL, Lat DECIMAL(9,6) NOT NULL, Long DECIMAL(9,6) NOT NULL, RetailOutlet VARCHAR(25), Hours VARCHAR(200));\n"
+CREATE_CONTACT_TBL = "CREATE TABLE Contact(LocationID VARCHAR(64) NOT NULL PRIMARY KEY, Phone VARCHAR(13), Fax VARCHAR(13), Terminal VARCHAR(60), FOREIGN KEY (LocationID) REFERENCES [Locations] (LocationID) ON UPDATE NO ACTION ON DELETE CASCADE);\n"
+CREATE_SPECIAL_QUALITIES = "CREATE TABLE SpecialQualities(LocationID VARCHAR(64) NOT NULL PRIMARY KEY, RestrictedAccess BIT, DepositTaking BIT, LimitedTransactions BIT, HandicapAccess BIT, AcceptsCash BIT, Cashless BIT, SelfServiceOnly BIT, Surcharge BIT, OnMilitaryBase BIT, MilitaryIDRequired BIT, AdditionalDetail VARCHAR(50), FOREIGN KEY (LocationID) REFERENCES [Locations] (LocationID) ON UPDATE NO ACTION ON DELETE CASCADE);\n"
 
 '''
 Gets Co-Op API key from local txt file. This file contains one line, which is the API key.
@@ -82,7 +82,7 @@ def _insert_driver():
             offset += 1
             sql_statements.append(_insert_into_locations(location) + '\n')
             sql_statements.append(_insert_into_contact(location) + '\n')
-            #sql_statements.append(_insert_into_specialqualities(location))
+            sql_statements.append(_insert_into_specialqualities(location) + '\n')
         break
     return sql_statements
 
@@ -112,9 +112,9 @@ def _insert_into_locations(location):
     # Zipcode
     values.append(_find_value(location, 'PostalCode'))
     # Lat
-    values.append(_find_value(location, 'Latitude'))
+    values.append(float(_find_value(location, 'Latitude')))
     # Long
-    values.append(_find_value(location, 'Longitude'))
+    values.append(float(_find_value(location, 'Longitude')))
     # RetailOutlet
     values.append(_find_value(location, 'RetailOutlet'))
     # Hours
@@ -149,8 +149,32 @@ return: sql insert statement (string)
 '''
 #FIXME
 def _insert_into_specialqualities(location):
-    print('in _insert_into_specialqualities')
-    return None
+    values = []
+    # LocationID
+    values.append(_find_value(location, 'ReferenceID'))
+    # RestrictedAccess
+    values.append(_bool_to_bit(location, 'RestrictedAccess'))
+    # DepositTaking
+    values.append(_bool_to_bit(location, 'AcceptDeposit'))
+    # LimitedTransactions
+    values.append(_bool_to_bit(location, 'LimitedTransaction'))
+    # HandicapAccess
+    values.append(_bool_to_bit(location, 'HandicapAccess'))
+    # AcceptsCash
+    values.append(_bool_to_bit(location, 'AcceptCash'))
+    # Cashless
+    values.append(_bool_to_bit(location, 'Cashless'))
+    # SelfServiceOnly
+    values.append(_bool_to_bit(location, 'SelfServiceOnly'))
+    # Surcharge
+    values.append(_bool_to_bit(location, 'Surcharge'))
+    # OnMilitaryBase
+    values.append(_bool_to_bit(location, 'OnMilitaryBase'))
+    # MilitaryIDRequired
+    values.append(_bool_to_bit(location, 'MilitaryIdRequired'))
+    # AdditionalDetail
+    values.append(_bool_to_bit(location, 'AccessNotes'))
+    return _insert_sql_statement(values, 'SpecialQualities')
 
 '''
 Finds value for a specified location field
@@ -209,10 +233,18 @@ def _get_daily_hours(location):
 def _insert_sql_statement(value_list, table):
     statement = 'INSERT INTO {} VALUES ('.format(table)
     for value in value_list:
-        statement += value + ', '
+        if value == '': value = 'NULL'
+        elif type(value) == str: value = "'{}'".format(value)
+        statement += str(value) + ', '
     statement = statement[:-2] # Gets rid of last comma and trailing whitespace
-    statement += ');'
+    statement += ") SELECT '{0}' WHERE NOT EXISTS(SELECT * FROM {1} WHERE LocationID='{0}');".format(value_list[0], table)
     return statement
+
+def _bool_to_bit(location, field):
+    value = _find_value(location, field)
+    if value == 'Y': value = 1
+    elif value == 'N': value = 0
+    return value
 
 if __name__ == '__main__':
     get_key()
