@@ -17,6 +17,20 @@ def get_key():
         KEY = file.read()
 
 '''
+Calls Co-Op API.
+param: offset; offset as viewed by Co-Op. If offset = 0, result = [1,100]. If offset = 100, result = [101, 200]
+return: BeautifulSoup list of locations, number of records if offset = 0, else just locations list.
+'''
+def _call_api(offset=0):
+    r = requests.get('https://api.co-opfs.org/locator/proximitysearch', params={'zip':'98122', 'offset': str(offset)}, headers={'Accept':'application/xml', 'Version':'1', 'Authorization': KEY})
+    soup = bs4.BeautifulSoup(r.text, 'xml')
+    records_avail = int(soup.find('RecordsAvailable').text)
+    print('Records available: ', records_avail)
+    locations = soup.find_all('Location')
+    if offset == 0: return locations, records_avail
+    return locations
+
+'''
 Checks if field is empty
 param: field (string)
 return: True or False
@@ -46,7 +60,7 @@ def sql_file_driver():
         file.write(CREATE_CONTACT_TBL)
         file.write(CREATE_SPECIAL_QUALITIES)
         # Write location sql insert statements to file
-        sql_statements = location_insert_driver()
+        sql_statements = _insert_driver()
         for statement in sql_statements:
             file.write(statement)
 
@@ -54,7 +68,7 @@ def sql_file_driver():
 Calls Co-Op API. For now only looks at all locations in one zipcode.
 Calls insert_into_locations, insert_into_contact, insert_into_specialqualities.
 '''
-def location_insert_driver():
+def _insert_driver():
     offset = 0
     records_avail = -1
     sql_statements = []
@@ -66,26 +80,11 @@ def location_insert_driver():
     while offset+1 < records_avail:
         for location in locations:
             offset += 1
-            sql_statements.append(_insert_into_locations(location))
-            sql_statements.append(_insert_into_contact(location))
-            sql_statements.append(_insert_into_specialqualities(location))
-
+            sql_statements.append(_insert_into_locations(location) + '\n')
+            #sql_statements.append(_insert_into_contact(location))
+            #sql_statements.append(_insert_into_specialqualities(location))
         break
     return sql_statements
-
-'''
-Calls Co-Op API.
-param: offset; offset as viewed by Co-Op. If offset = 0, result = [1,100]. If offset = 100, result = [101, 200]
-return: BeautifulSoup list of locations, number of records if offset = 0, else just locations list.
-'''
-def _call_api(offset=0):
-    r = requests.get('https://api.co-opfs.org/locator/proximitysearch', params={'zip':'98122', 'offset': str(offset)}, headers={'Accept':'application/xml', 'Version':'1', 'Authorization': KEY})
-    soup = bs4.BeautifulSoup(r.text, 'xml')
-    records_avail = int(soup.find('RecordsAvailable').text)
-    print('Records available: ', records_avail)
-    locations = soup.find_all('Location')
-    if offset == 0: return locations, records_avail
-    return locations
 
 '''
 Parses location object to create sql insert statement into Locations table
@@ -94,8 +93,38 @@ return: sql insert statement (string)
 '''
 #FIXME
 def _insert_into_locations(location):
-    print('in _insert_into_locations')
-    return None
+    values = []
+
+    # LocationID
+    values.append(_find_value(location, 'ReferenceID'))
+    # InstitutionName
+    values.append(_find_value(location, 'Name'))
+    # TypeName
+    type_name = _find_value(location, 'LocationType')
+    if type_name == 'A': values.append('ATM')
+    elif type_name == 'S': values.append('Shared Branch')
+    else: values.append('')
+    # Street
+    values.append(_find_value(location, 'Address'))
+    # City
+    values.append(_find_value(location, 'City'))
+    # State
+    values.append(_find_value(location, 'State'))
+    # Zipcode
+    values.append(_find_value(location, 'PostalCode'))
+    # Lat
+    values.append(_find_value(location, 'Latitude'))
+    # Long
+    values.append(_find_value(location, 'Longitude'))
+    # RetailOutlet
+    values.append(_find_value(location, 'RetailOutlet'))
+    # Hours
+    hours = _find_value(location, 'Hours')
+    if hours != '':
+        values.append(hours)
+    else:
+        values.append(_get_daily_hours(location))
+    return _insert_sql_statement(values, 'Locations')
 
 '''
 Parses location object to create a sql insert statement into Contact table
@@ -117,19 +146,68 @@ def _insert_into_specialqualities(location):
     print('in _insert_into_specialqualities')
     return None
 
+'''
+Finds value for a specified location field
+param: location (beautiful soup object for one location)
+param: Co-Op field to look for (string)
+return: value of field (string)
+'''
+def _find_value(location, field):
+    try:
+        return location.find(field).text
+    except AttributeError:
+        return ''
+
+'''
+Gets hours for each day M-SUN
+param: location (beautiful soup object)
+returns: hours for each day (1 string). days with the same hours are grouped together.
+'''
+def _get_daily_hours(location):
+    '''
+    Returns hour range as a single string
+    param: day (string). eg: Mon, Tue, Wed, etc.
+    '''
+    def _hour_string(day):
+        op = _find_value(location, 'Hours' + day + 'Open')
+        cl = _find_value(location, 'Hours' + day + 'Close')
+        if op == '' or cl == '': return 'No hours information available'
+        return op + ' - ' + cl
+
+    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    hour_ranges = {}
+    ret_string = 'No hours information available'
+    for day in days: # Get all ranges
+        hour_range = _hour_string(day)
+        if hour_range == ret_string: continue # if no info, do not add to hour_ranges
+        # Get abbreviation
+        if day == 'Thu':
+            slc = 'Th'
+        elif day == 'Sun':
+            slc = 'Su'
+        else:
+            slc = day[0]
+        # insert into days dict
+        if hour_range in hour_ranges: # if more than one day share the same range
+            hour_ranges[hour_range] = hour_ranges[hour_range] + slc
+        else: # if unique range thusfar
+            hour_ranges[hour_range] = slc
+    # if location info is available
+    if len(hour_ranges) != 0:
+        ret_string = ''
+        for key in hour_ranges: # Generate return string
+            ret_string += '{}: {}, '.format(hour_ranges[key], key)
+        ret_string = ret_string[:-2] # Removes trailing whitespace and comma
+    return ret_string
+
+def _insert_sql_statement(value_list, table):
+    statement = 'INSERT INTO {} VALUES ('.format(table)
+    for value in value_list:
+        statement += value + ', '
+    statement = statement[:-2] # Gets rid of last comma and trailing whitespace
+    statement += ');'
+    return statement
+
 if __name__ == '__main__':
-    '''
-    locations = soup.find_all('Location')
-
-    print(locations[0].prettify())
-    print(locations[0].find('Name').text)
-
-    print(locations[0].prettify())
-
-    for i in range(0, len(locations)):
-        print("location: ", locations[i].find('Name').text)
-        print("\tlatitude: ", locations[i].find('Latitude').text)
-        print("\tlongitude: ", locations[i].find('Longitude').text)
-    '''
     get_key()
     sql_file_driver()
