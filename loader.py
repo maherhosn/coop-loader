@@ -147,7 +147,6 @@ Parses location object to create a sql insert statement into SpecialQualities ta
 param: location (a single location object)
 return: sql insert statement (string)
 '''
-#FIXME
 def _insert_into_specialqualities(location):
     values = []
     # LocationID
