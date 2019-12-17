@@ -7,4 +7,4 @@ Python script that calls Co-Op API and writes SQL statements into a text file
 - Unit Testing
 - Command-line arguments to specify and drive behavior
 - Connect to DB?
-- Add state search option
+- Add state search option (API key does not permit this at the moment)
