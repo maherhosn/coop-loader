@@ -2,12 +2,14 @@ import requests
 import urllib3 
 import bs4
 import lxml
+import pypyodbc
+import time
+import sys
+
+
 
 KEY = ""
-CREATE_LOCATIONS_TBL = "CREATE TABLE Locations(LocationID VARCHAR(64) NOT NULL PRIMARY KEY, InstitutionName VARCHAR(50), TypeName VARCHAR(15) NOT NULL, Street VARCHAR(25) NOT NULL, City VARCHAR(25) NOT NULL, State CHAR(2) NOT NULL, Zipcode VARCHAR(13) NOT NULL, Lat DECIMAL(9,6) NOT NULL, Long DECIMAL(9,6) NOT NULL, RetailOutlet VARCHAR(25), Hours VARCHAR(200));\n"
-CREATE_CONTACT_TBL = "CREATE TABLE Contact(LocationID VARCHAR(64) NOT NULL PRIMARY KEY, Phone VARCHAR(13), Fax VARCHAR(13), Terminal VARCHAR(60), FOREIGN KEY (LocationID) REFERENCES [Locations] (LocationID) ON UPDATE NO ACTION ON DELETE CASCADE);\n"
-CREATE_SPECIAL_QUALITIES = "CREATE TABLE SpecialQualities(LocationID VARCHAR(64) NOT NULL PRIMARY KEY, RestrictedAccess BIT, DepositTaking BIT, LimitedTransactions BIT, HandicapAccess BIT, AcceptsCash BIT, Cashless BIT, SelfServiceOnly BIT, Surcharge BIT, OnMilitaryBase BIT, MilitaryIDRequired BIT, AdditionalDetail VARCHAR(50), FOREIGN KEY (LocationID) REFERENCES [Locations] (LocationID) ON UPDATE NO ACTION ON DELETE CASCADE);\n"
-
+CREATE_LOCATIONS_TBL = "CREATE TABLE Locations(ReferenceID  VARCHAR(64) NOT NULL PRIMARY KEY,Name  VARCHAR(64),Address  VARCHAR(64) NOT NULL,City  VARCHAR(64) NOT NULL,County  VARCHAR(64),State  VARCHAR(64) NOT NULL,PostalCode  VARCHAR(64),Country  VARCHAR(64),Phone  VARCHAR(64),Fax  VARCHAR(64),WebAddress  VARCHAR(64),Latitude  DECIMAL(9,6),Longitude  DECIMAL(9,6),Hours  VARCHAR(64),RetailOutlet  VARCHAR(64),RestrictedAccess  VARCHAR(64),AcceptDeposit  VARCHAR(64),AcceptCash  VARCHAR(64),EnvelopeRequired  VARCHAR(64),OnMilitaryBase  VARCHAR(64),OnPremise  VARCHAR(64),Surcharge  VARCHAR(64),Access  VARCHAR(64),AccessNotes  VARCHAR(64),InstallationType  VARCHAR(64),HandicapAccess  VARCHAR(64),LocationType  VARCHAR(64),HoursMonOpen VARCHAR(200),HoursMonClose     VARCHAR(200),HoursTueOpen      VARCHAR(200),HoursTueClose     VARCHAR(200),HoursWedOpen      VARCHAR(200),HoursWedClose     VARCHAR(200),HoursThuOpen      VARCHAR(200),HoursThuClose     VARCHAR(200),HoursFriOpen      VARCHAR(200),HoursFriClose     VARCHAR(200),HoursSatOpen      VARCHAR(200),HoursSatClose     VARCHAR(200),HoursSunOpen      VARCHAR(200),HoursSunClose     VARCHAR(200),HoursDTMonOpen    VARCHAR(200),HoursDTMonClose   VARCHAR(200),HoursDTTueOpen    VARCHAR(200),HoursDTTueClose   VARCHAR(200),HoursDTWedOpen    VARCHAR(200),HoursDTWedClose   VARCHAR(200),HoursDTThuOpen    VARCHAR(200),HoursDTThuClose   VARCHAR(200),HoursDTFriOpen    VARCHAR(200),HoursDTFriClose   VARCHAR(200),HoursDTSatOpen    VARCHAR(200),HoursDTSatClose   VARCHAR(200),HoursDTSunOpen    VARCHAR(200),HoursDTSunClose   VARCHAR(200),Cashless  VARCHAR(64),DriveThruOnly VARCHAR(64),LimitedTransactions VARCHAR(64),MilitaryIdRequired VARCHAR(64),SelfServiceDevice VARCHAR(64),SelfServiceOnly VARCHAR(64));\n"
 '''
 Gets Co-Op API key from local txt file. This file contains one line, which is the API key.
 '''
@@ -57,12 +59,32 @@ def sql_file_driver():
     with open('sql_startup.txt', 'w+') as file:
         # Create tables
         file.write(CREATE_LOCATIONS_TBL)
-        file.write(CREATE_CONTACT_TBL)
-        file.write(CREATE_SPECIAL_QUALITIES)
         # Write location sql insert statements to file
         sql_statements = _insert_driver()
         for statement in sql_statements:
             file.write(statement)
+        file.close()
+
+        conn = pypyodbc.connect('Driver={SQL Server};Server=csp199.cslab.seattleu.edu;Database=testdb;uid=sa;pwd=KoeningMPass2019!')
+        cursor = conn.cursor()
+         # Execute db statements
+        File1 = open('sql_startup.txt', 'r')
+        i=0
+        for line in File1:
+            sqlCommand=line.strip()
+            try:
+                cursor.execute(sqlCommand)
+            # NB : you won't get an IntegrityError when reading
+            except (pypyodbc.ProgrammingError, pypyodbc.Error)  as e:
+                 print(e)
+                 pass
+            cursor.commit()
+            #print(sqlCommand)
+            #time.sleep(1)
+            #print(line.strip())
+
+
+
 
 '''
 Calls Co-Op API. For now only looks at all locations in one zipcode.
@@ -81,8 +103,6 @@ def _insert_driver():
         for location in locations:
             offset += 1
             sql_statements.append(_insert_into_locations(location) + '\n')
-            sql_statements.append(_insert_into_contact(location) + '\n')
-            sql_statements.append(_insert_into_specialqualities(location) + '\n')
         break
     return sql_statements
 
@@ -93,36 +113,74 @@ return: sql insert statement (string)
 '''
 def _insert_into_locations(location):
     values = []
-
-    # LocationID
     values.append(_find_value(location, 'ReferenceID'))
-    # InstitutionName
     values.append(_find_value(location, 'Name'))
-    # TypeName
-    type_name = _find_value(location, 'LocationType')
-    if type_name == 'A': values.append('ATM')
-    elif type_name == 'S': values.append('Shared Branch')
-    else: values.append('')
-    # Street
     values.append(_find_value(location, 'Address'))
-    # City
     values.append(_find_value(location, 'City'))
-    # State
+    values.append(_find_value(location, 'County'))
     values.append(_find_value(location, 'State'))
-    # Zipcode
     values.append(_find_value(location, 'PostalCode'))
-    # Lat
-    values.append(float(_find_value(location, 'Latitude')))
-    # Long
-    values.append(float(_find_value(location, 'Longitude')))
-    # RetailOutlet
-    values.append(_find_value(location, 'RetailOutlet'))
-    # Hours
+    values.append(_find_value(location, 'Country'))
+    values.append(_find_value(location, 'Phone'))
+    values.append(_find_value(location, 'Fax'))
+    values.append(_find_value(location, 'WebAddress'))
+    values.append(_find_value(location, 'Latitude'))
+    values.append(_find_value(location, 'Longitude'))
     hours = _find_value(location, 'Hours')
     if hours != '':
         values.append(hours)
     else:
         values.append(_get_daily_hours(location))
+    values.append(_find_value(location, 'RetailOutlet'))
+    values.append(_find_value(location, 'RestrictedAccess'))
+    values.append(_find_value(location, 'AcceptDeposit'))
+    values.append(_find_value(location, 'AcceptCash'))
+    values.append(_find_value(location, 'EnvelopeRequired'))
+    values.append(_find_value(location, 'OnMilitaryBase'))
+    values.append(_find_value(location, 'OnPremise'))
+    values.append(_find_value(location, 'Surcharge'))
+    values.append(_find_value(location, 'Access'))
+    values.append(_find_value(location, 'AccessNotes'))
+    values.append(_find_value(location, 'InstallationType'))
+    values.append(_find_value(location, 'HandicapAccess'))
+    type_name = _find_value(location, 'LocationType')
+    if type_name == 'A': values.append('ATM')
+    elif type_name == 'S': values.append('Shared Branch')
+    else: values.append('')
+    values.append(_find_value(location, 'HoursMonOpen'))
+    values.append(_find_value(location, 'HoursMonClose'))
+    values.append(_find_value(location, 'HoursTueOpen'))
+    values.append(_find_value(location, 'HoursTueClose'))
+    values.append(_find_value(location, 'HoursWedOpen'))
+    values.append(_find_value(location, 'HoursWedClose'))
+    values.append(_find_value(location, 'HoursThuOpen'))
+    values.append(_find_value(location, 'HoursThuClose'))
+    values.append(_find_value(location, 'HoursFriOpen'))
+    values.append(_find_value(location, 'HoursFriClose'))
+    values.append(_find_value(location, 'HoursSatOpen'))
+    values.append(_find_value(location, 'HoursSatClose'))
+    values.append(_find_value(location, 'HoursSunOpen'))
+    values.append(_find_value(location, 'HoursSunClose'))
+    values.append(_find_value(location, 'HoursDTMonOpen'))
+    values.append(_find_value(location, 'HoursDTMonClose'))
+    values.append(_find_value(location, 'HoursDTTueOpen'))
+    values.append(_find_value(location, 'HoursDTTueClose'))
+    values.append(_find_value(location, 'HoursDTWedOpen'))
+    values.append(_find_value(location, 'HoursDTWedClose'))
+    values.append(_find_value(location, 'HoursDTThuOpen'))
+    values.append(_find_value(location, 'HoursDTThuClose'))
+    values.append(_find_value(location, 'HoursDTFriOpen'))
+    values.append(_find_value(location, 'HoursDTFriClose'))
+    values.append(_find_value(location, 'HoursDTSatOpen'))
+    values.append(_find_value(location, 'HoursDTSatClose'))
+    values.append(_find_value(location, 'HoursDTSunOpen'))
+    values.append(_find_value(location, 'HoursDTSunClose'))
+    values.append(_find_value(location, 'Cashless'))
+    values.append(_find_value(location, 'DriveThruOnly'))
+    values.append(_find_value(location, 'LimitedTransactions'))
+    values.append(_find_value(location, 'MilitaryIdRequired'))
+    values.append(_find_value(location, 'SelfServiceDevice'))
+    values.append(_find_value(location, 'SelfServiceOnly'))
     return _insert_sql_statement(values, 'Locations')
 
 '''
@@ -236,7 +294,7 @@ def _insert_sql_statement(value_list, table):
         elif type(value) == str: value = "'{}'".format(value)
         statement += str(value) + ', '
     statement = statement[:-2] # Gets rid of last comma and trailing whitespace
-    statement += ") SELECT '{0}' WHERE NOT EXISTS(SELECT * FROM {1} WHERE LocationID='{0}');".format(value_list[0], table)
+    statement += ") SELECT '{0}' WHERE NOT EXISTS(SELECT * FROM {1} WHERE ReferenceID='{0}');".format(value_list[0], table)
     return statement
 
 def _bool_to_bit(location, field):
